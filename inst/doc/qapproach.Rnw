@@ -1,0 +1,138 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=25mm}
+\title{A Q Approach to Consensus Building}
+\author{Jonas Geschke}
+%\VignetteIndexEntry{A Q Approach to Consensus Building}
+%\VignetteEngine{utils::Sweave}
+%\VignetteEncoding{UTF-8}
+\begin{document}
+\maketitle
+
+\section{Purpose and workflow}
+
+The \texttt{qapproach} package combines Q method with a consensus
+priority score (CPS). Participants rank statements, the analysis identifies
+shared group perspectives, and the CPS summarizes priorities across those
+perspectives while weighting them by their explanatory importance.
+
+The recommended workflow is to prepare and orient rankings with
+\texttt{prepare\_rankings()}, fit perspectives and CPS with
+\texttt{qapproach()}, optionally assess stability with \texttt{validate()},
+and communicate the results with the plotting and PDF-export functions.
+
+\section{Prepare rankings}
+
+Input commonly has one participant per row, an identifier column, and one
+numeric column per statement. The preparation function transposes it into the
+statement-by-ranking format required by the analysis.
+
+\begin{verbatim}
+library(qapproach)
+participant_data <- data.frame(
+  ID = paste0("P", 1:6),
+  stat1 = c(-1, -1, 0, 0, 1, 1),
+  stat2 = c(0, 0, -1, 1, -1, 0),
+  stat3 = c(1, 1, 1, -1, 0, -1)
+)
+rankings <- prepare_rankings(participant_data)
+rankings
+\end{verbatim}
+
+Identifiers must be unique and statement values numeric. Use the
+\texttt{statement\_columns} argument for other naming conventions. Resolve
+missing observations before analysis.
+
+\section{Fit the Q approach}
+
+Use \texttt{nfactors = "criteria"} for automatic selection or a fixed integer
+for a theory-led fit. A typical empirical call is:
+
+\begin{verbatim}
+fit <- qapproach(rankings, nfactors = "criteria",
+                 rotation = "quartimax",
+                 distribution_repair_seed = 42L)
+fit$summary
+fit$perspectives
+fit$`cp-scores`
+fit$factor_selection$diagnostics
+fit$diagnostics
+\end{verbatim}
+
+The result retains factor-selection and final-fit diagnostics. If a discrete
+perspective distribution is broken, the default analysis bootstraps a
+reference and repairs it automatically. The audit trail is stored in
+\texttt{fit\$distribution\_repair}. CPS remain based on the original Q method
+z-scores.
+
+\texttt{not\_agreeing(fit)} returns opposing and undecided
+rankings that did not agree with a retained perspective. By default,
+it returns only numeric ranking columns for direct reuse as input;
+\texttt{status = TRUE} adds a \texttt{Status} column that distinguishes
+opposing and undecided rankings.
+\texttt{nfactordetermination()} runs only factor selection, and
+\texttt{manually\_repair\_perspective\_distributions()} supports explicitly
+controlled repair.
+
+\section{Validate stability}
+
+Validation is optional and can take substantially longer because it generates
+bootstrap samples. A seed makes resampling reproducible. Single-perspective
+solutions use Procrustes sign alignment, solutions with two or three
+perspectives use qindtest alignment, and larger solutions use orthogonal
+Procrustes alignment before flags and z-scores are recalculated.
+
+\begin{verbatim}
+validation <- validate(fit, seed = 2026)
+validation_perspectives(validation)
+validation_cps(validation)
+validation_means(validation)
+\end{verbatim}
+
+Perspective validation examines factor and statement-position stability. Cp-score
+validation reports score and rank intervals, bias, standard errors, and
+top-rank frequencies. These frequencies describe stability under the observed
+data and workflow; they are not probabilities of objective importance.
+Input-mean sensitivity compares cp-scores with input-ranking means transformed
+onto the same fixed standard-normal cumulative-probability scale.
+Advanced users can call \texttt{qaboots()} or
+\texttt{bootstrap\_consensus\_priority\_scores()} directly.
+
+cp-scores use a fixed scale on which 0.5 represents neutral prioritization
+across all group perspectives, values above 0.5 represent relatively higher
+priority, and values below 0.5 represent relatively lower priority. Values 0
+and 1 are theoretical boundaries. cp-scores can be compared across analyses
+only when the statement set and meanings, ranking distribution, instructions,
+data preparation, and analytical settings are the same. Such comparisons
+describe relative priorities within the shared statement set and do not alone
+establish population-level differences.
+
+\section{Visualize and export}
+
+\begin{verbatim}
+plot_barplot(fit)
+plot_heatmap(fit)
+plot_spiderweb(fit)
+plot_network(fit, network_labelled = TRUE, layout_seed = 42L)
+plot_jitterplot(validation)
+write_figure_collection(
+  file.path(tempdir(), "qapproach-figures.pdf"),
+  result = fit, validation = validation, layout_seed = 42L
+)
+\end{verbatim}
+
+The visualization API recognizes the \texttt{sdg}, \texttt{tca-actions}, and
+\texttt{tca-strategies} presets. Explicit labels and colors take precedence.
+
+\section{Reporting guidance}
+
+Report input orientation and preprocessing, the factor-selection rule,
+rotation, retained perspectives, flagging threshold, distribution-repair
+audit, and material diagnostics. For validation, also report the bootstrap
+target and achieved valid iterations, confidence level, rank cutoffs, seed,
+and any non-estimable or unstable results.
+
+\end{document}
