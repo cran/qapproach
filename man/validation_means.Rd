@@ -18,9 +18,8 @@ validation_means(
 
 \item{digits}{Number of decimal places used for console display.}
 
-\item{print_table}{Print the formatted heading, metadata, table, and
-interpretation. Set to `FALSE` when only the returned data frame is
-needed.}
+\item{print_table}{Print the formatted heading, metadata, and table. Set to
+`FALSE` when only the returned data frame is needed.}
 
 \item{sort_by}{Column used to sort the returned table. The default is
 `"cp-scores"`; use `NULL` to retain the original statement order. Any
@@ -42,4 +41,22 @@ with input-ranking means transformed onto the same fixed standard-normal
 cumulative-probability scale. This is a sensitivity analysis, not a test of
 whether the consensus priority scores are valid: differences may reflect
 the intended perspective-based weighting.
+}
+\details{
+The direction of the rank-change measure intentionally differs from the
+arithmetic order named in its column heading. Because lower rank numbers
+indicate higher priority, a positive rank change means that the statement
+moved upward under the cp-score ranking. Positive values in both the score-
+difference and rank-change columns therefore indicate a higher cp-score
+priority relative to the input means. When input means are tied, `Priority
+comparison` reports `Tied under input means` instead of assigning a
+directional interpretation.
+
+The comparison of the cp-scores with the input means is a sensitivity
+analysis, not a test of whether the consensus priority scores are valid.
+Differences can reflect the intended
+perspective-based weighting: input means treat every ranking equally,
+whereas cp-scores explicitly represent group perspectives. A small
+difference may indicate that perspective-based weighting has little effect
+in the dataset, which is itself informative.
 }

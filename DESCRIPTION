@@ -1,7 +1,7 @@
 Package: qapproach
 Type: Package
 Title: The Q Approach to Consensus Building
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: person("Jonas", "Geschke", email = "hallo@qapproach.app", role = c("aut", "cre"))
 Description: Implements a workflow based on Q method to support
     consensus-building processes. It prepares participant rankings, selects
@@ -20,8 +20,8 @@ Suggests: hues, knitr, magick, pdftools, rmarkdown, testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0
 NeedsCompilation: no
-Packaged: 2026-09-12 20:10:10 UTC; geschke
+Packaged: 2026-09-23 17:57:36 UTC; geschke
 Author: Jonas Geschke [aut, cre]
 Maintainer: Jonas Geschke <hallo@qapproach.app>
 Repository: CRAN
-Date/Publication: 2026-09-23 02:50:02 UTC
+Date/Publication: 2026-10-08 10:00:02 UTC

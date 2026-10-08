@@ -11,6 +11,18 @@ test_that("prepare_rankings converts participant rows to ranking columns", {
   expect_equal(unname(result[[1L]]), c(-1, 0, 1))
 })
 
+test_that("prepare_rankings accepts a custom id_column", {
+  input <- data.frame(
+    participant = c("a", "b"), stat1 = c(-1, 0), stat2 = c(0, 1),
+    stat3 = c(1, -1), check.names = FALSE
+  )
+
+  result <- prepare_rankings(input, id_column = "participant")
+
+  expect_equal(names(result), c("a", "b"))
+  expect_equal(row.names(result), c("stat1", "stat2", "stat3"))
+})
+
 test_that("prepare_rankings rejects invalid identifiers and values", {
   duplicated <- data.frame(ID = c("a", "a"), stat1 = 1:2, stat2 = 2:1,
                            stat3 = c(0, 0))

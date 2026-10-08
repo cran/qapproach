@@ -10,6 +10,7 @@ validation_cps(
   print_table = TRUE,
   sort_by = "cp-scores",
   decreasing = TRUE,
+  include_bottom = FALSE,
   file = NULL
 )
 }
@@ -26,6 +27,12 @@ validation_cps(
 returned technical column name may be supplied.}
 
 \item{decreasing}{Logical; sort in decreasing order.}
+
+\item{include_bottom}{Include the `P bottom 1`, `P bottom 3`, and
+`P bottom 5` columns in the returned, printed, and exported table. The
+default `FALSE` hides these columns only. `validate()` always calculates
+and stores the bottom-rank probabilities, and the validation assessment
+always uses them.}
 
 \item{file}{Optional CSV path. The default `NULL` writes no file. If the `.csv`
 extension is omitted, it is added

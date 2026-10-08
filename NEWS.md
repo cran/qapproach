@@ -1,3 +1,55 @@
+# qapproach 0.1.2
+
+* `qapproach()` now uses `distribution_repair_seed = 42L` by default so that
+  its specialized automatic distribution-repair step is reproducible. The
+  seed remains locally scoped and does not modify the caller's random-number
+  state. Set it to `NULL` to use the current random-number state.
+* In `prepare_rankings()`, the `idcolumn` argument was renamed to `id_column`
+  for consistency with `statement_columns`.
+* Console notifications are simplified. In `qapproach()` and `validate()`,
+  recognized conditions, opposition details, invalid iterations, and
+  discard reasons remain available in their centralized diagnostics. Messages
+  are retained when the requested consensus or factor count is adjusted, an
+  automatic distribution repair is performed, or `qindtest` requires the
+  orthogonal Procrustes fallback. Unclassified warnings now include the package
+  bug-report URL. `validation_means()` likewise no longer prints its general 
+  interpretation paragraphs; this guidance is now provided in `?validation_means`.
+* `validate()` now always calculates and stores bottom-rank probabilities and
+  uses them for the cp-score validation assessments. In `validation_cps()`, the
+  new `include_bottom` argument controls only whether the corresponding
+  `P bottom 1`, `P bottom 3`, and `P bottom 5` columns are returned, printed,
+  and exported, so this display option does not change a statement's assessment
+  category.
+* The new experimental `agreement_across_levels()` function traces every
+  original input ranking, including rankings introduced above the first
+  supplied level, through any number of nested analytical levels. It reports
+  each level's analysis, agreement status, and perspective, together with a
+  compact positive-agreement path, underlying agreement counts by perspective,
+  a terminal-path summary, identifiers and statement-ranking values for
+  rankings that never agree, and an internal completeness check.
+* The new `plot_sdg_cps()` function compares cp-scores across analyses by
+  positioning and scaling the 17 official SDG icons on analysis-specific rows.
+  Its optional side-by-side style uses an overlap-free priority-ordered grid,
+  and horizontal analysis guides can be requested explicitly.
+  It draws on the active graphics device by default and writes a PDF only when
+  an explicit `file` path is supplied.
+* The new `plot_sdg_diamonds()` function exports one TIFF per group
+  perspective, arranging the 17 bundled SDG icons in the perspective's
+  diamond-shaped Q-sort distribution from lower to higher priority.
+* The new `plot_hierarchical_levels()` function visualizes an arbitrary number
+  of bottom-up Q approach levels. Individual rankings feed into first- or
+  later-level analyses, and separate group-perspective arrows connect the
+  subsequent analyses. Node colors and sizes and the two input-arrow colors
+  are configurable. An optional agreement mode distinguishes agreement,
+  opposition, and undecided inputs through grey, firebrick, and dodger-blue
+  arrows. Individual rankings are grouped by their earliest target 
+  analysis, analysis nodes use equal horizontal gaps, and optional
+  `level_gaps` add user-defined vertical separation after selected levels.
+  `ranking_labelled` and `analysis_labelled` control the two node-label types
+  independently. Instead of automated plotting, with `network_object = TRUE`, 
+  advanced users may retrieve the prepared `igraph` object without plotting 
+  and create fully custom network layouts and graphics.
+
 # qapproach 0.1.1
 
 * `validate()`, `qaboots()`, and `bootstrap_consensus_priority_scores()` now

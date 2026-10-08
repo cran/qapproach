@@ -44,7 +44,8 @@ A list containing bootstrap estimates, iteration accounting, and
 Generate Q method bootstrap results or collect a requested number of valid
 bootstrap iterations of the consensus priority scores. Recognized R messages and
 warnings emitted by the underlying Q method bootstrap are retained as
-structured diagnostics; unfamiliar warnings are re-emitted (feel free to report them).
+structured diagnostics without routine console messages; unfamiliar
+warnings are re-emitted and include the package's bug-report URL.
 Single-perspective solutions use Procrustes sign alignment. Solutions with
 two or three perspectives use `qindtest`, with the package's orthogonal
 Procrustes alignment as a documented fallback if `qindtest` fails; solutions

@@ -8,14 +8,14 @@
 \alias{manually_repair_perspective_distributions}
 \title{Prepare rankings and run a Q approach analysis}
 \usage{
-prepare_rankings(dataset, idcolumn = "ID", statement_columns = NULL,
+prepare_rankings(dataset, id_column = "ID", statement_columns = NULL,
   add = list(NULL), orientation = c("auto", "participant_rows",
   "statement_rows"))
 qapproach(dataset, nfactors = "criteria", rotation = "quartimax",
   load_perc = 0.8, min_load_perc = 0.5, morethan5 = FALSE,
   screeplot_file = NULL,
   repair_distributions = TRUE, distribution_repair_steps = NULL,
-  distribution_repair_seed = NULL,
+  distribution_repair_seed = 42L,
   distribution_repair_max_attempt_multiplier = 10L)
 nfactordetermination(dataset, rotation, load_perc, morethan5 = FALSE,
   min_load_perc = 0.5)
@@ -27,7 +27,7 @@ manually_repair_perspective_distributions(results, bootstrap = NULL,
 \arguments{
 \item{dataset}{A data frame or matrix. Participant rows or already prepared statement rows are accepted.}
 
-\item{idcolumn}{Unique participant identifier column, or `NULL`.}
+\item{id_column}{Unique participant identifier column, or `NULL`.}
 
 \item{add}{A list of optional additional rankings.}
 
@@ -61,7 +61,9 @@ scree plot. `NULL` writes no file.}
 
 \item{distribution_repair_steps}{Target valid repair iterations, or `NULL`.}
 
-\item{distribution_repair_seed}{Integer seed or `NULL`.}
+\item{distribution_repair_seed}{Integer seed used for automatic distribution
+repair, or `NULL` to use the current random-number state. Defaults to `42L`
+so that this exceptional corrective step is reproducible.}
 
 \item{distribution_repair_max_attempt_multiplier}{Attempt-limit multiplier.}
 
@@ -84,7 +86,8 @@ repair details. By default, this follows `interactive`.}
 `prepare_rankings()` returns statement-by-ranking data.
   `qapproach()` returns the fitted analysis, perspectives, weighted z-scores,
   consensus priority scores, repair audit,
-  and diagnostics. When automatic factor selection is used, its details are
+  and centralized diagnostics in `results$diagnostics`. When automatic
+  factor selection is used, its details are
   available as `<object>$factor_selection`, including the captured diagnostic
   messages and warnings at `<object>$diagnostics$factor_selection`. Other
   functions return the result described above.
@@ -94,6 +97,12 @@ repair details. By default, this follows `interactive`.}
 statement-by-ranking orientation used by `qapproach()`. `qapproach()` fits
 perspectives and computes consensus priority scores. The result retains the
 underlying eigenvalue-weighted mean z-scores as a technical output. The
+analysis stores recognized Q method conditions, factor-selection details,
+automatic distribution-repair diagnostics, and opposing rankings silently
+in `results$diagnostics`. In particular, the affected ranking identifiers,
+perspectives, and loadings are available in
+`results$diagnostics$negative_flagging`. Unclassified conditions remain
+visible as warnings so that they can be reported and reviewed. The
 remaining aliases
 provide factor selection, unflagged rankings, and manual distribution repair.
 }

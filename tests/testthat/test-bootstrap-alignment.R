@@ -21,7 +21,7 @@ test_that("bootstrap progress is explicitly suppressible", {
   expect_null(formals(qaboots)$seed)
   expect_null(formals(bootstrap_consensus_priority_scores)$seed)
   expect_null(formals(validate)$seed)
-  expect_null(formals(qapproach)$distribution_repair_seed)
+  expect_identical(formals(qapproach)$distribution_repair_seed, 42L)
 })
 
 test_that("bootstrap seeds are locally scoped", {

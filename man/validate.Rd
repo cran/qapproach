@@ -11,7 +11,6 @@ validate(
   statement_labels = NULL,
   confidence_level = 0.95,
   rank_cutoffs = c(1L, 3L, 5L),
-  include_bottom = FALSE,
   target_valid_steps = NULL,
   valid_steps_per_ranking = 40L,
   seed = NULL,
@@ -38,9 +37,6 @@ validation wherever possible.}
 \item{rank_cutoffs}{Rank cutoffs used for top probabilities and sensitivity
 comparisons; defaults to 1, 3, and 5.}
 
-\item{include_bottom}{Include corresponding bottom-rank probabilities in the
-consensus priority scores' validation table.}
-
 \item{target_valid_steps}{Target number of valid bootstrap iterations of the consensus priority scores.
 By default this is `valid_steps_per_ranking` times the number of rankings.}
 
@@ -63,7 +59,10 @@ in non-interactive use. Set explicitly to `TRUE` or `FALSE` to override it.}
 }
 \value{
 A list containing three validation-procedure results and centralized
-  diagnostics.
+  diagnostics in `validation$diagnostics`. These diagnostics contain the
+  alignment methods and fallbacks, recognized bootstrap conditions, invalid
+  iterations and their discard reasons, and the input-mean correlation
+  diagnostic.
 }
 \description{
 Runs three complementary procedures: bootstrap stability of the group
@@ -74,5 +73,11 @@ Bootstrap factor alignment uses orthogonal Procrustes sign alignment for one
 perspective, `qindtest` for two or three perspectives, and the package's
 orthogonal Procrustes implementation for larger solutions. If `qindtest`
 fails, the affected batch is rerun with orthogonal Procrustes alignment and
-transparently reported as `qindtest with orthogonal Procrustes fallback`.
+reported with a message referring to this help page. The fallback preserves
+the intended factor correspondence when `qindtest` cannot provide a unique
+alignment; its use and the original error are retained in the diagnostics.
+Recognized underlying conditions, routine alignment corrections, invalid
+iterations, and discard reasons are retained silently in
+`validation$diagnostics`. Unclassified conditions are emitted as warnings so
+that they can be reported and reviewed.
 }

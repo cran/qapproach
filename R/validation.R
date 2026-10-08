@@ -245,6 +245,359 @@ consensus_across_levels <- function(levels, print_table = TRUE) {
   output
 }
 
+#' Trace ranking agreement across successive Q approach levels
+#'
+#' **Experimental.** This function traces each original input ranking through
+#' an arbitrary number of analytical levels. Original rankings may enter at
+#' any supplied level; inputs that match a generated group-perspective
+#' identifier are excluded from the set of original rankings. Its interface
+#' and interpretation may be refined as additional multi-level applications
+#' become available.
+#'
+#' For every supplied level, the returned table reports the analysis in which
+#' the current input was found, whether it agreed with, opposed, or was
+#' undecided about a perspective, and the relevant perspective identifier.
+#' `Agreement path` joins only positively agreeing perspectives with ` > `.
+#' Opposition and undecided status do not propagate agreement through a group
+#' perspective. If a raw ranking is explicitly re-added at a later level, it
+#' can enter the agreement path there. Rankings that do not agree with a
+#' perspective at any level receive `NA` as their agreement path.
+#'
+#' @param levels A named list of levels. Each element is a Q approach result
+#'   or a list of Q approach results representing the analyses at that level.
+#' @param print_table Logical; print the agreement-lineage table for
+#'   convenience.
+#' @return A list containing `paths`, with one row per original input ranking;
+#'   `underlying_agreement_counts`, with the number of unique original rankings
+#'   whose positive path reaches each perspective; and
+#'   `terminal_path_summary`, with counts and shares by terminal perspective.
+#'   `rankings_not_agreeing` reports the count, identifiers, and underlying
+#'   statement-ranking values of original rankings that do not positively
+#'   agree with any perspective at any level.
+#'   An internal completeness check warns if the original rankings are not
+#'   represented exactly once in `paths`.
+#' @export
+agreement_across_levels <- function(levels, print_table = TRUE) {
+  if (!is.list(levels) || length(levels) < 2L) {
+    stop("levels must be a list containing at least two analytical levels.")
+  }
+  if (!is.logical(print_table) || length(print_table) != 1L ||
+      is.na(print_table)) {
+    stop("print_table must be TRUE or FALSE.")
+  }
+  if (is.null(names(levels)) || any(!nzchar(names(levels)))) {
+    names(levels) <- paste0("Level ", seq_along(levels))
+  }
+  names(levels) <- make.unique(names(levels))
+
+  as_results <- function(level) {
+    if (is.list(level) && !is.null(level$`Q method results`)) {
+      return(list(level))
+    }
+    if (is.list(level) && length(level) &&
+        all(vapply(level, function(x) {
+          is.list(x) && !is.null(x$`Q method results`)
+        }, logical(1)))) {
+      return(level)
+    }
+    stop("Each level must contain qapproach() result object(s).")
+  }
+  levels <- lapply(levels, as_results)
+
+  analysis_names <- function(results, level_name) {
+    supplied <- names(results)
+    if (!is.null(supplied) && all(nzchar(supplied))) {
+      return(make.unique(supplied))
+    }
+    make.unique(vapply(seq_along(results), function(index) {
+      candidate <- results[[index]]$`dataset name`
+      if (is.null(candidate) || !length(candidate) ||
+          is.na(candidate[1L]) || !nzchar(as.character(candidate[1L]))) {
+        paste0(level_name, " analysis ", index)
+      } else {
+        as.character(candidate[1L])
+      }
+    }, character(1)))
+  }
+
+  result_map <- function(result, analysis_name) {
+    q <- result$`Q method results`
+    flagged <- as.matrix(q$flagged)
+    loadings <- as.matrix(q$loa)
+    if (!identical(dim(flagged), dim(loadings))) {
+      stop("Flagging and loading matrices have incompatible dimensions.")
+    }
+    input_ids <- rownames(flagged)
+    if (is.null(input_ids) || length(input_ids) != nrow(flagged) ||
+        any(!nzchar(input_ids))) {
+      input_ids <- rownames(loadings)
+    }
+    if (is.null(input_ids) || length(input_ids) != nrow(flagged) ||
+        any(!nzchar(input_ids))) {
+      input_ids <- colnames(q$dataset)
+    }
+    if (is.null(input_ids) || length(input_ids) != nrow(flagged) ||
+        any(!nzchar(input_ids))) {
+      stop("Every analysis must retain identifiers for its input rankings.")
+    }
+    perspective_ids <- rownames(result$perspectives)
+    if (is.null(perspective_ids) ||
+        length(perspective_ids) != ncol(flagged) ||
+        any(!nzchar(perspective_ids))) {
+      perspective_ids <- colnames(flagged)
+    }
+    if (is.null(perspective_ids) ||
+        length(perspective_ids) != ncol(flagged) ||
+        any(!nzchar(perspective_ids))) {
+      perspective_ids <- paste0(analysis_name, "_f", seq_len(ncol(flagged)))
+    }
+    positive <- flagged & is.finite(loadings) & loadings > 0
+    negative <- flagged & is.finite(loadings) & loadings < 0
+    positive[is.na(positive)] <- FALSE
+    negative[is.na(negative)] <- FALSE
+    if (any(rowSums(positive) > 1L) || any(rowSums(negative) > 1L)) {
+      stop(
+        "An input ranking flags for more than one perspective within an analysis; ",
+        "its cross-level path is ambiguous."
+      )
+    }
+    positive_index <- max.col(positive, ties.method = "first")
+    negative_index <- max.col(negative, ties.method = "first")
+    has_positive <- rowSums(positive) == 1L
+    has_negative <- rowSums(negative) == 1L
+    data.frame(
+      input_id = as.character(input_ids),
+      analysis = analysis_name,
+      status = ifelse(
+        has_positive, "agreeing", ifelse(has_negative, "opposing", "undecided")
+      ),
+      perspective = ifelse(
+        has_positive,
+        perspective_ids[positive_index],
+        ifelse(has_negative, perspective_ids[negative_index], NA_character_)
+      ),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }
+
+  mapped_levels <- lapply(seq_along(levels), function(level_index) {
+    names_at_level <- analysis_names(levels[[level_index]], names(levels)[level_index])
+    maps <- Map(result_map, levels[[level_index]], names_at_level)
+    combined <- do.call(rbind, maps)
+    rownames(combined) <- NULL
+    duplicated_inputs <- unique(combined$input_id[duplicated(combined$input_id)])
+    if (length(duplicated_inputs)) {
+      stop(
+        "Input identifiers must be unique within each analytical level. ",
+        "Duplicated identifiers: ", paste(duplicated_inputs, collapse = ", "), "."
+      )
+    }
+    combined
+  })
+
+  perspective_catalog <- do.call(rbind, lapply(seq_along(levels), function(level_index) {
+    names_at_level <- analysis_names(levels[[level_index]], names(levels)[level_index])
+    do.call(rbind, Map(function(result, analysis_name) {
+      ids <- rownames(result$perspectives)
+      if (is.null(ids) || length(ids) != nrow(result$perspectives) ||
+          any(!nzchar(ids))) {
+        ids <- colnames(result$`Q method results`$flagged)
+      }
+      if (is.null(ids) || length(ids) != nrow(result$perspectives) ||
+          any(!nzchar(ids))) {
+        ids <- paste0(analysis_name, "_f", seq_len(nrow(result$perspectives)))
+      }
+      data.frame(
+        Level = names(levels)[level_index],
+        Analysis = analysis_name,
+        Perspective = as.character(ids),
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+      )
+    }, levels[[level_index]], names_at_level))
+  }))
+  rownames(perspective_catalog) <- NULL
+  perspective_ids <- unique(perspective_catalog$Perspective)
+  all_inputs <- do.call(rbind, lapply(seq_along(mapped_levels), function(index) {
+    map <- mapped_levels[[index]]
+    map$level_index <- index
+    map
+  }))
+  raw_inputs <- all_inputs[!all_inputs$input_id %in% perspective_ids, , drop = FALSE]
+  raw_inputs <- raw_inputs[!duplicated(raw_inputs$input_id), , drop = FALSE]
+  if (!nrow(raw_inputs)) {
+    stop("No original input rankings could be identified across the supplied levels.")
+  }
+  output <- data.frame(
+    `Input ranking` = raw_inputs$input_id,
+    `Source analysis` = raw_inputs$analysis,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  current_input <- raw_inputs$input_id
+  paths <- vector("list", nrow(raw_inputs))
+
+  add_level_columns <- function(level_index, matches) {
+    level_name <- names(levels)[level_index]
+    output[[paste0(level_name, " analysis")]] <<- matches$analysis
+    output[[paste0(level_name, " status")]] <<- matches$status
+    output[[paste0(level_name, " perspective")]] <<- matches$perspective
+  }
+
+  for (level_index in seq_along(levels)) {
+      mapping <- mapped_levels[[level_index]]
+      matched_rows <- rep(NA_integer_, nrow(output))
+      for (row in seq_len(nrow(output))) {
+        candidates <- unique(c(current_input[row], output$`Input ranking`[row]))
+        candidates <- candidates[!is.na(candidates) & nzchar(candidates)]
+        candidate_matches <- match(candidates, mapping$input_id, nomatch = 0L)
+        candidate_matches <- candidate_matches[candidate_matches > 0L]
+        if (length(candidate_matches)) matched_rows[row] <- candidate_matches[1L]
+      }
+      matches <- data.frame(
+        analysis = rep(NA_character_, nrow(output)),
+        status = rep(NA_character_, nrow(output)),
+        perspective = rep(NA_character_, nrow(output)),
+        stringsAsFactors = FALSE
+      )
+      found <- !is.na(matched_rows)
+      if (any(found)) {
+        matches[found, ] <- mapping[
+          matched_rows[found], c("analysis", "status", "perspective"), drop = FALSE
+        ]
+      }
+      add_level_columns(level_index, matches)
+      agreeing <- found & matches$status == "agreeing"
+      for (row in which(agreeing)) {
+        paths[[row]] <- c(paths[[row]], matches$perspective[row])
+        current_input[row] <- matches$perspective[row]
+      }
+      current_input[found & !agreeing] <- NA_character_
+  }
+
+  output$`Agreement path` <- vapply(paths, function(path) {
+    if (!length(path)) NA_character_ else paste(path, collapse = " > ")
+  }, character(1))
+
+  expected_ids <- unique(raw_inputs$input_id)
+  complete <- !anyDuplicated(output$`Input ranking`) &&
+    length(output$`Input ranking`) == length(expected_ids) &&
+    setequal(output$`Input ranking`, expected_ids)
+  if (!complete) {
+    warning(
+      "The cross-level agreement output is incomplete: original input rankings ",
+      "are missing or duplicated in the path table."
+    )
+  }
+
+  underlying_counts <- perspective_catalog
+  underlying_counts$`Underlying agreeing rankings` <- vapply(
+    underlying_counts$Perspective,
+    function(perspective) {
+      sum(vapply(paths, function(path) perspective %in% path, logical(1)))
+    },
+    integer(1)
+  )
+
+  terminal_perspective <- vapply(paths, function(path) {
+    if (!length(path)) NA_character_ else path[length(path)]
+  }, character(1))
+  terminal_values <- unique(terminal_perspective)
+  terminal_summary <- do.call(rbind, lapply(terminal_values, function(perspective) {
+    no_agreement <- is.na(perspective)
+    count <- if (no_agreement) {
+      sum(is.na(terminal_perspective))
+    } else {
+      sum(terminal_perspective == perspective, na.rm = TRUE)
+    }
+    catalog_row <- if (no_agreement) {
+      NA_integer_
+    } else {
+      match(perspective, perspective_catalog$Perspective)
+    }
+    data.frame(
+      `Terminal level` = if (is.na(catalog_row)) NA_character_ else
+        perspective_catalog$Level[catalog_row],
+      `Terminal analysis` = if (is.na(catalog_row)) NA_character_ else
+        perspective_catalog$Analysis[catalog_row],
+      `Terminal perspective` = if (no_agreement) "No agreement" else perspective,
+      `Input rankings` = count,
+      Share = count / nrow(output),
+      stringsAsFactors = FALSE,
+      check.names = FALSE
+    )
+  }))
+  rownames(terminal_summary) <- NULL
+
+  not_agreeing_ids <- output$`Input ranking`[is.na(output$`Agreement path`)]
+  ranking_value_lookup <- list()
+  for (level_index in seq_along(levels)) {
+    for (analysis_index in seq_along(levels[[level_index]])) {
+      result_object <- levels[[level_index]][[analysis_index]]
+      q <- result_object$`Q method results`
+      dataset <- as.matrix(q$dataset)
+      input_ids <- rownames(q$flagged)
+      if (is.null(input_ids) || length(input_ids) != ncol(dataset) ||
+          any(!nzchar(input_ids))) {
+        input_ids <- colnames(dataset)
+      }
+      if (is.null(input_ids) || length(input_ids) != ncol(dataset)) next
+      statement_ids <- rownames(dataset)
+      if (is.null(statement_ids) || length(statement_ids) != nrow(dataset) ||
+          any(!nzchar(statement_ids))) {
+        statement_ids <- paste0("Statement ", seq_len(nrow(dataset)))
+      }
+      available <- intersect(not_agreeing_ids, input_ids)
+      for (ranking_id in available) {
+        if (is.null(ranking_value_lookup[[ranking_id]])) {
+          ranking_value_lookup[[ranking_id]] <- stats::setNames(
+            as.numeric(dataset[, match(ranking_id, input_ids)]),
+            statement_ids
+          )
+        }
+      }
+    }
+  }
+  statement_ids <- unique(unlist(lapply(ranking_value_lookup, names), use.names = FALSE))
+  ranking_values <- matrix(
+    NA_real_, nrow = length(not_agreeing_ids), ncol = length(statement_ids),
+    dimnames = list(not_agreeing_ids, statement_ids)
+  )
+  for (ranking_id in intersect(not_agreeing_ids, names(ranking_value_lookup))) {
+    values <- ranking_value_lookup[[ranking_id]]
+    ranking_values[ranking_id, names(values)] <- values
+  }
+  ranking_values <- as.data.frame(
+    ranking_values, stringsAsFactors = FALSE, check.names = FALSE
+  )
+  missing_values <- setdiff(not_agreeing_ids, names(ranking_value_lookup))
+  if (length(missing_values)) {
+    warning(
+      "Statement-ranking values could not be recovered for: ",
+      paste(missing_values, collapse = ", "), "."
+    )
+  }
+
+  result <- list(
+    paths = output,
+    underlying_agreement_counts = underlying_counts,
+    terminal_path_summary = terminal_summary,
+    rankings_not_agreeing = list(
+      count = length(not_agreeing_ids),
+      rankings = not_agreeing_ids,
+      ranking_values = ranking_values
+    )
+  )
+  if (isTRUE(print_table)) {
+    print(result$paths, row.names = FALSE)
+    print(result$underlying_agreement_counts, row.names = FALSE)
+    print(result$terminal_path_summary, row.names = FALSE)
+    print(result$rankings_not_agreeing)
+  }
+  result
+}
+
 .extract_bootstrap_cps_batch <- function(results, bootstrap_results) {
   full_results <- bootstrap_results$full.bts.res
   factor_count <- length(full_results)
@@ -432,17 +785,6 @@ qaboots <- function(
     context = "The consensus priority scores' bootstrap",
     diagnostics_path = "validation$diagnostics$`consensus priority scores`$initial"
   )
-  if (generated_valid_steps < target_valid_steps &&
-      discarded_steps / requested_steps > 0.10) {
-    message(
-      "\nMore than 10% of the attempted bootstrap iterations did not ",
-      "produce valid aligned consensus priority scores.\n",
-      "(attempted iterations: ", requested_steps,
-      " | discarded iterations: ", discarded_steps, "). Diagnostics are ",
-      "available in validation$diagnostics$`consensus priority scores`$initial.\n"
-    )
-  }
-
   cps_result <- list(
     "bootstrap cp-scores" = score_matrix,
     "weighted z-scores" = results$`weighted z-scores`,
@@ -515,9 +857,9 @@ bootstrap_consensus_priority_scores <- function(
 #'
 #' Summarises the standard and bootstrapped consensus priority scores for all
 #' statements. The validation interpretation is descriptive: it classifies
-#' statements using their bootstrap probabilities of appearing in the top 1,
-#' top 3, and top 5 ranks. Matching bottom-rank probabilities can optionally be
-#' included.
+#' statements using their bootstrap probabilities of appearing in the top and
+#' bottom ranks. Bottom-rank probabilities are always used for the descriptive
+#' assessment, but their columns can optionally be included in the table.
 #'
 #' `x` may be the three-part result returned by `validate()`, a complete result
 #' with a `"bootstrap consensus priority scores"` element, or the object
@@ -531,7 +873,8 @@ bootstrap_consensus_priority_scores <- function(
 #' @param rank_cutoffs Positive whole-number rank cutoffs for the stability
 #'   probabilities. The default reports top 1, top 3, and top 5 probabilities.
 #' @param include_bottom Logical; if `TRUE`, also report the corresponding
-#'   bottom-rank probabilities and use them for lower-priority interpretations.
+#'   bottom-rank probability columns. These probabilities are always calculated
+#'   and used for the lower-priority assessments.
 #' @return A data frame with one row per statement.
 #' @noRd
 .consensus_priority_validation_table <- function(
@@ -636,17 +979,14 @@ bootstrap_consensus_priority_scores <- function(
   }
   colnames(probability_top) <- paste0("P(top ", rank_cutoffs, ")")
 
-  probability_bottom <- NULL
-  if (include_bottom) {
-    probability_bottom <- vapply(rank_cutoffs, function(cutoff) {
-      boundary <- statement_count - cutoff + 1L
-      rowMeans(bootstrap_ranks >= boundary)
-    }, numeric(statement_count))
-    if (is.null(dim(probability_bottom))) {
-      probability_bottom <- matrix(probability_bottom, ncol = 1L)
-    }
-    colnames(probability_bottom) <- paste0("P(bottom ", rank_cutoffs, ")")
+  probability_bottom <- vapply(rank_cutoffs, function(cutoff) {
+    boundary <- statement_count - cutoff + 1L
+    rowMeans(bootstrap_ranks >= boundary)
+  }, numeric(statement_count))
+  if (is.null(dim(probability_bottom))) {
+    probability_bottom <- matrix(probability_bottom, ncol = 1L)
   }
+  colnames(probability_bottom) <- paste0("P(bottom ", rank_cutoffs, ")")
 
   probability_at <- function(probabilities, cutoff) {
     column <- match(cutoff, rank_cutoffs)
@@ -656,12 +996,9 @@ bootstrap_consensus_priority_scores <- function(
   top_1 <- probability_at(probability_top, 1L)
   top_3 <- probability_at(probability_top, 3L)
   top_5 <- probability_at(probability_top, 5L)
-  bottom_1 <- if (include_bottom) probability_at(probability_bottom, 1L) else
-    rep(NA_real_, statement_count)
-  bottom_3 <- if (include_bottom) probability_at(probability_bottom, 3L) else
-    rep(NA_real_, statement_count)
-  bottom_5 <- if (include_bottom) probability_at(probability_bottom, 5L) else
-    rep(NA_real_, statement_count)
+  bottom_1 <- probability_at(probability_bottom, 1L)
+  bottom_3 <- probability_at(probability_bottom, 3L)
+  bottom_5 <- probability_at(probability_bottom, 5L)
   informative_cutoffs <- rank_cutoffs[rank_cutoffs < statement_count]
   broad_cutoff <- if (length(informative_cutoffs)) {
     max(informative_cutoffs)
@@ -673,7 +1010,7 @@ bootstrap_consensus_priority_scores <- function(
   } else {
     probability_at(probability_top, broad_cutoff)
   }
-  broad_bottom <- if (!include_bottom || is.na(broad_cutoff)) {
+  broad_bottom <- if (is.na(broad_cutoff)) {
     rep(NA_real_, statement_count)
   } else {
     probability_at(probability_bottom, broad_cutoff)
@@ -780,7 +1117,7 @@ bootstrap_consensus_priority_scores <- function(
     "Likely upper priority" =
       paste0(broad_top_name, " is at least 75% but below 90%."),
     "Indeterminate middle priority" =
-      "The cp-score equals 0.5, or no included upper or lower criterion is met.",
+      "The cp-score equals 0.5, or no upper or lower criterion is met.",
     "Likely lower priority" =
       paste0(broad_bottom_name, " is at least 75% but below 90%."),
     "Robust lower priority" =
@@ -825,6 +1162,11 @@ bootstrap_consensus_priority_scores <- function(
 #'   `"cp-scores"`; use `NULL` to retain the original statement order. Any
 #'   returned technical column name may be supplied.
 #' @param decreasing Logical; sort in decreasing order.
+#' @param include_bottom Include the `P bottom 1`, `P bottom 3`, and
+#'   `P bottom 5` columns in the returned, printed, and exported table. The
+#'   default `FALSE` hides these columns only. `validate()` always calculates
+#'   and stores the bottom-rank probabilities, and the validation assessment
+#'   always uses them.
 #' @param file Optional CSV path. The default `NULL` writes no file. If the `.csv`
 #'   extension is omitted, it is added
 #'   automatically. The exported table retains numeric values for further
@@ -833,7 +1175,7 @@ bootstrap_consensus_priority_scores <- function(
 #' @export
 validation_cps <- function(
     validation, digits = 2L, print_table = TRUE, sort_by = "cp-scores",
-    decreasing = TRUE, file = NULL) {
+    decreasing = TRUE, include_bottom = FALSE, file = NULL) {
   if (!is.list(validation) ||
       is.null(validation$`consensus priority score stability`)) {
     stop("validation must be an object returned by validate().")
@@ -853,6 +1195,10 @@ validation_cps <- function(
   if (!is.logical(print_table) || length(print_table) != 1L ||
       is.na(print_table)) {
     stop("print_table must be TRUE or FALSE.")
+  }
+  if (!is.logical(include_bottom) || length(include_bottom) != 1L ||
+      is.na(include_bottom)) {
+    stop("include_bottom must be TRUE or FALSE.")
   }
 
   formatted_interval <- function(lower, upper) {
@@ -890,11 +1236,23 @@ validation_cps <- function(
     names(table), c(leading_columns, removed_columns)
   )
   table <- table[, c(leading_columns, remaining_columns), drop = FALSE]
+  if (!include_bottom) {
+    bottom_columns <- grep(
+      "^P\\(bottom [0-9]+\\)$", names(table), value = TRUE
+    )
+    table[bottom_columns] <- NULL
+  }
   for (attribute_name in c(
       "probability_descriptions", "validation_assessment_descriptions",
       "broad_priority_cutoff", "confidence_level",
       "confidence_interval_label", "valid_bootstrap_iterations")) {
     attr(table, attribute_name) <- attr(raw_table, attribute_name)
+  }
+  probability_descriptions <- attr(table, "probability_descriptions")
+  if (!is.null(probability_descriptions)) {
+    attr(table, "probability_descriptions") <- probability_descriptions[
+      names(probability_descriptions) %in% names(table)
+    ]
   }
   attr(table, "weighted_z_score_description") <- paste(
     "The eigenvalue-weighted mean of the statement's z-scores across all",
@@ -1212,11 +1570,28 @@ validation_perspectives <- function(
 #' whether the consensus priority scores are valid: differences may reflect
 #' the intended perspective-based weighting.
 #'
+#' @details
+#' The direction of the rank-change measure intentionally differs from the
+#' arithmetic order named in its column heading. Because lower rank numbers
+#' indicate higher priority, a positive rank change means that the statement
+#' moved upward under the cp-score ranking. Positive values in both the score-
+#' difference and rank-change columns therefore indicate a higher cp-score
+#' priority relative to the input means. When input means are tied, `Priority
+#' comparison` reports `Tied under input means` instead of assigning a
+#' directional interpretation.
+#'
+#' The comparison of the cp-scores with the input means is a sensitivity
+#' analysis, not a test of whether the consensus priority scores are valid.
+#' Differences can reflect the intended
+#' perspective-based weighting: input means treat every ranking equally,
+#' whereas cp-scores explicitly represent group perspectives. A small
+#' difference may indicate that perspective-based weighting has little effect
+#' in the dataset, which is itself informative.
+#'
 #' @param validation An object returned by `validate()`.
 #' @param digits Number of decimal places used for console display.
-#' @param print_table Print the formatted heading, metadata, table, and
-#'   interpretation. Set to `FALSE` when only the returned data frame is
-#'   needed.
+#' @param print_table Print the formatted heading, metadata, and table. Set to
+#'   `FALSE` when only the returned data frame is needed.
 #' @param sort_by Column used to sort the returned table. The default is
 #'   `"cp-scores"`; use `NULL` to retain the original statement order. Any
 #'   returned technical column name may be supplied.
@@ -1348,16 +1723,6 @@ validation_means <- function(
         identical(correlation_diagnostic$Status, "not estimable")) {
       cat("\nNote: ", correlation_diagnostic$Explanation, "\n", sep = "")
     }
-    cat(
-      "\nThe rank-change direction compared to the score-difference direction is intentionally: ",
-      "Because lower rank numbers indicate higher priority, a positive rank change means ",
-      "that the statement moved upward under the cp-score ranking. Thus, positive values ",
-      "in both columns consistently indicate a higher cp-score priority relative to the ",
-      "input means. When input means are tied, the Priority comparison reports ",
-      "'Tied under input means' instead of assigning a directional interpretation.\n",
-      sep = ""
-    )
-    cat("\n", sensitivity$interpretation, "\n", sep = "")
   }
   invisible(table)
 }
@@ -1694,8 +2059,9 @@ validation_means <- function(
     "Spearman rank correlation" = correlation_check$value,
     "Spearman rank-correlation diagnostic" = correlation_check$diagnostic,
     "interpretation" = paste(
-      "This comparison is a sensitivity analysis, not a test of whether the",
-      "consensus priority scores are valid. Differences can reflect the",
+      "The comparison of the cp-scores with the input means is a sensitivity",
+      "analysis, not a test of whether the consensus priority scores are",
+      "valid. Differences can reflect the",
       "intended perspective-based weighting: input means treat every ranking",
       "equally, whereas cp-scores explicitly represent group perspectives.",
       "A small difference may indicate that perspective-based weighting has",
@@ -1714,7 +2080,13 @@ validation_means <- function(
 #' perspective, `qindtest` for two or three perspectives, and the package's
 #' orthogonal Procrustes implementation for larger solutions. If `qindtest`
 #' fails, the affected batch is rerun with orthogonal Procrustes alignment and
-#' transparently reported as `qindtest with orthogonal Procrustes fallback`.
+#' reported with a message referring to this help page. The fallback preserves
+#' the intended factor correspondence when `qindtest` cannot provide a unique
+#' alignment; its use and the original error are retained in the diagnostics.
+#' Recognized underlying conditions, routine alignment corrections, invalid
+#' iterations, and discard reasons are retained silently in
+#' `validation$diagnostics`. Unclassified conditions are emitted as warnings so
+#' that they can be reported and reviewed.
 #'
 #' @param results An object returned by `qapproach()`.
 #' @param bootstrap Optional object returned by `qaboots()`. If omitted, one is
@@ -1726,8 +2098,6 @@ validation_means <- function(
 #' @param confidence_level Confidence level for bootstrap intervals.
 #' @param rank_cutoffs Rank cutoffs used for top probabilities and sensitivity
 #'   comparisons; defaults to 1, 3, and 5.
-#' @param include_bottom Include corresponding bottom-rank probabilities in the
-#'   consensus priority scores' validation table.
 #' @param target_valid_steps Target number of valid bootstrap iterations of the consensus priority scores.
 #'   By default this is `valid_steps_per_ranking` times the number of rankings.
 #' @param valid_steps_per_ranking Default number of valid iterations per input
@@ -1743,12 +2113,15 @@ validation_means <- function(
 #' @param zscore_instability_threshold Absolute z-score bias used for the
 #'   descriptive instability flag.
 #' @return A list containing three validation-procedure results and centralized
-#'   diagnostics.
+#'   diagnostics in `validation$diagnostics`. These diagnostics contain the
+#'   alignment methods and fallbacks, recognized bootstrap conditions, invalid
+#'   iterations and their discard reasons, and the input-mean correlation
+#'   diagnostic.
 #' @export
 validate <- function(
     results, bootstrap = NULL, bootstrap_scores = NULL,
     statement_labels = NULL, confidence_level = 0.95,
-    rank_cutoffs = c(1L, 3L, 5L), include_bottom = FALSE,
+    rank_cutoffs = c(1L, 3L, 5L),
     target_valid_steps = NULL, valid_steps_per_ranking = 40L,
     seed = NULL, max_batch_steps = 500L, max_attempt_multiplier = 10L,
     zscore_instability_threshold = 0.2, progress = interactive()) {
@@ -1921,7 +2294,7 @@ validate <- function(
       statement_labels = statement_labels,
       confidence_level = confidence_level,
       rank_cutoffs = rank_cutoffs,
-      include_bottom = include_bottom
+      include_bottom = TRUE
     )
   validation
 }

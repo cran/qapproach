@@ -68,7 +68,7 @@ distributiondetermination <- function(nstat){
 
 .distributiondetermination <- distributiondetermination
 
-prepare_rankings <- function(dataset, idcolumn = "ID",
+prepare_rankings <- function(dataset, id_column = "ID",
                              statement_columns = NULL, add = list(NULL),
                              orientation = c("auto", "participant_rows", "statement_rows")){
   orientation <- match.arg(orientation)
@@ -77,14 +77,14 @@ prepare_rankings <- function(dataset, idcolumn = "ID",
   }
   dataset <- as.data.frame(dataset, check.names = FALSE)
 
-  has_id <- !is.null(idcolumn) && length(idcolumn) == 1L && !is.na(idcolumn) &&
-    idcolumn %in% names(dataset)
-  if (!is.null(idcolumn) && length(idcolumn) == 1L && !is.na(idcolumn) &&
+  has_id <- !is.null(id_column) && length(id_column) == 1L && !is.na(id_column) &&
+    id_column %in% names(dataset)
+  if (!is.null(id_column) && length(id_column) == 1L && !is.na(id_column) &&
       !has_id && orientation == "participant_rows") {
-    stop("idcolumn '", idcolumn, "' was not found in dataset")
+    stop("The ID column '", id_column, "' was not found in the dataset.")
   }
-  if (has_id && anyDuplicated(dataset[[idcolumn]])) {
-    stop("Values in idcolumn must be unique.")
+  if (has_id && anyDuplicated(dataset[[id_column]])) {
+    stop("The values in id_column must be unique.")
   }
 
   expected_distribution <- function(statement_count) {
@@ -114,8 +114,8 @@ prepare_rankings <- function(dataset, idcolumn = "ID",
   }
 
   if (has_id) {
-    row.names(dataset) <- as.character(dataset[[idcolumn]])
-    dataset[[idcolumn]] <- NULL
+    row.names(dataset) <- as.character(dataset[[id_column]])
+    dataset[[id_column]] <- NULL
     orientation <- "participant_rows"
   }
 
@@ -177,15 +177,15 @@ prepare_rankings <- function(dataset, idcolumn = "ID",
       x <- additions[[add_index]]
       if (is.vector(x) && !is.list(x)) x <- data.frame(additional = x)
       x <- as.data.frame(x, check.names = FALSE)
-      add_has_id <- !is.null(idcolumn) && length(idcolumn) == 1L &&
-        !is.na(idcolumn) && idcolumn %in% names(x)
+      add_has_id <- !is.null(id_column) && length(id_column) == 1L &&
+        !is.na(id_column) && id_column %in% names(x)
       if (add_has_id) {
-        if (anyDuplicated(x[[idcolumn]])) {
+        if (anyDuplicated(x[[id_column]])) {
           stop("The values in added ranking object ", add_index,
                "'s ID column must be unique.", call. = FALSE)
         }
-        row.names(x) <- as.character(x[[idcolumn]])
-        x[[idcolumn]] <- NULL
+        row.names(x) <- as.character(x[[id_column]])
+        x[[id_column]] <- NULL
       }
       if (!all(vapply(x, is.numeric, logical(1)))) {
         stop("The added ranking object ", add_index, " must contain only numeric values.")
@@ -345,7 +345,9 @@ prepare_rankings <- function(dataset, idcolumn = "ID",
       warning(
         "The automatic factor selection produced an unclassified warning: ",
         text, " Diagnostics are available in ",
-        "results$diagnostics$factor_selection.",
+        "results$diagnostics$factor_selection.\n",
+        "Please report the warning to ",
+        "https://github.com/JonasGeschke/qapproach/issues",
         call. = FALSE
       )
     }
@@ -1238,12 +1240,14 @@ cpscores <- function(statementzscores, factoreigenvalues){
     diagnostics_path = "bootstrap$diagnostics") {
   if (!is.list(diagnostics)) return(invisible(diagnostics))
   known <- diagnostics$known_conditions
-  if (is.data.frame(known) && nrow(known)) {
+  fallback_used <- is.data.frame(known) && nrow(known) && any(
+    known$Classification == "qindtest alignment fallback"
+  )
+  if (fallback_used) {
     message(
-      "Information:\n\n",
-      context, " encountered recognized diagnostic conditions.\n",
-      "See results$diagnostics for details, including alignment fallbacks ",
-      "and any invalid iterations and reasons for their discard."
+      "qindtest alignment failed for one or more bootstrap batches; ",
+      "orthogonal Procrustes alignment was used as a fallback. ",
+      "See ?validate for details."
     )
   }
   unclassified <- diagnostics$unclassified_warnings
@@ -1251,7 +1255,9 @@ cpscores <- function(statementzscores, factoreigenvalues){
     for (text in unclassified) {
       warning(
         "\n", context, " produced an unclassified warning: ", text,
-        "\nDiagnostics are available in ", diagnostics_path, ".",
+        "\nDiagnostics are available in ", diagnostics_path, ".\n",
+        "Please report the warning to ",
+        "https://github.com/JonasGeschke/qapproach/issues",
         call. = FALSE
       )
     }
@@ -1288,8 +1294,7 @@ cpscores <- function(statementzscores, factoreigenvalues){
         text,
         fixed = TRUE
       )
-      if (known_warning(text) &&
-          (!smoothing_warning || numerical_singularity)) {
+      if (!smoothing_warning || numerical_singularity || !known_warning(text)) {
         invokeRestart("muffleWarning")
       }
     }
@@ -1371,6 +1376,17 @@ cpscores <- function(statementzscores, factoreigenvalues){
     qmethod_warnings = observed_warnings,
     unclassified_qmethod_warnings = observed_warnings[!known_indices]
   )
+  if (length(diagnostics$unclassified_qmethod_warnings)) {
+    for (text in diagnostics$unclassified_qmethod_warnings) {
+      warning(
+        "The Q method analysis produced an unclassified warning: ", text,
+        "\nDiagnostics are available in results$diagnostics$analysis.\n",
+        "Please report the warning to ",
+        "https://github.com/JonasGeschke/qapproach/issues",
+        call. = FALSE
+      )
+    }
+  }
   list(qmethod_result = qmethod_result, diagnostics = diagnostics)
 }
 
@@ -1409,7 +1425,7 @@ qapproach <- function(dataset, nfactors = "criteria", rotation = "quartimax",
                       screeplot_file = NULL,
                       repair_distributions = TRUE,
                       distribution_repair_steps = NULL,
-                      distribution_repair_seed = NULL,
+                      distribution_repair_seed = 42L,
                       distribution_repair_max_attempt_multiplier = 10L){
   datasetname <- paste(deparse(substitute(dataset)), collapse = "")
   dataset <- as.data.frame(dataset)
@@ -1491,9 +1507,6 @@ qapproach <- function(dataset, nfactors = "criteria", rotation = "quartimax",
       morethan5 = morethan5
     )
     nfactors <- factor_selection$nfactors
-    if (nfactors == 1) {
-      message("Note: There is a consensus perspective.\n")
-    }
     if (isTRUE(factor_selection$threshold_adjusted)) {
       message(
         "The factor-loading threshold was automatically adjusted from ",
@@ -1784,28 +1797,6 @@ qapproach <- function(dataset, nfactors = "criteria", rotation = "quartimax",
                   `nfactors capped` = nfactors_capped,
                   `maximum feasible nfactors` = max_factors,
                   "diagnostics" = centralized_diagnostics)
-  diagnostic_paths <- character()
-  if (length(diagnostics$qmethod_warnings) ||
-      length(diagnostics$unclassified_qmethod_warnings) ||
-      (!is.null(factor_selection_diagnostics) &&
-       length(factor_selection_diagnostics$conditions_by_candidate)) ||
-      !is.null(distribution_repair$bootstrap_diagnostics)) {
-    message(
-      "Information:\n\nDifferent messages and warnings came up. See ",
-      "results$diagnostics for details.\n"
-    )
-  }
-  negative_flagging <- results$diagnostics$negative_flagging
-  if (is.data.frame(negative_flagging) && nrow(negative_flagging)) {
-    message(
-      nrow(negative_flagging), " ranking(s) have negative loadings on their ",
-      "group perspective(s). This represents statistical opposition rather ",
-      "than agreement and may require further dialogue to reach a consensus. These rankings are ",
-      "excluded from calculating the positive degree of consensus. The ",
-      "affected rankings are available in results$diagnostics$negative_flagging " ,
-      "and can be marked in network figures.\n"
-    )
-  }
   return(results)
 }
 
